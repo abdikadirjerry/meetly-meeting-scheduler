@@ -5,6 +5,7 @@ import { ArrowRight, CalendarDays, Clock3, Plus, Sparkles } from "lucide-react";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { MeetingCard } from "@/components/meeting-card";
+import { MeetingForm } from "@/components/meeting-form";
 import { MobileSidebar } from "@/components/mobile-sidebar";
 import { StatCard } from "@/components/stat-card";
 import { TopHeader } from "@/components/top-header";
@@ -47,7 +48,10 @@ const initialMeetings: Meeting[] = [
 
 export default function Home() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [meetings] = useState<Meeting[]>(initialMeetings);
+
+  const [isMeetingFormOpen, setIsMeetingFormOpen] = useState(false);
+
+  const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
 
   const statistics = useMemo(() => {
     const today = meetings.filter(isMeetingToday).length;
@@ -75,6 +79,18 @@ export default function Home() {
   }, [meetings]);
 
   const nextMeeting = upcomingMeetings[0];
+
+  function handleCreateMeeting(newMeeting: Meeting) {
+    setMeetings((currentMeetings) => [...currentMeetings, newMeeting]);
+  }
+
+  function openMeetingForm() {
+    setIsMeetingFormOpen(true);
+  }
+
+  function closeMeetingForm() {
+    setIsMeetingFormOpen(false);
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -110,6 +126,7 @@ export default function Home() {
 
                 <button
                   type="button"
+                  onClick={openMeetingForm}
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800"
                 >
                   <Plus size={18} />
@@ -195,6 +212,7 @@ export default function Home() {
 
                         <button
                           type="button"
+                          onClick={openMeetingForm}
                           className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950"
                         >
                           <Plus size={16} />
@@ -242,6 +260,13 @@ export default function Home() {
           </main>
         </div>
       </div>
+
+      {isMeetingFormOpen && (
+        <MeetingForm
+          onCreateMeeting={handleCreateMeeting}
+          onCancel={closeMeetingForm}
+        />
+      )}
     </div>
   );
 }
