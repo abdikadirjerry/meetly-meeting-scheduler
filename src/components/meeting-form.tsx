@@ -1,10 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   CalendarDays,
   Clock3,
-  Link as LinkIcon,
   Loader2,
   MapPin,
   Plus,
@@ -16,7 +15,9 @@ import {
 import type { Meeting, MeetingType } from "@/types/meeting";
 
 interface MeetingFormProps {
-  onCreateMeeting: (meeting: Meeting) => void;
+  meeting?: Meeting;
+  onCreateMeeting?: (meeting: Meeting) => void;
+  onUpdateMeeting?: (meeting: Meeting) => void;
   onCancel: () => void;
 }
 
@@ -26,7 +27,6 @@ interface FormErrors {
   startTime?: string;
   endTime?: string;
   location?: string;
-  attendees?: string;
 }
 
 const meetingTypes: { value: MeetingType; label: string }[] = [
@@ -62,19 +62,45 @@ function getTodayDate() {
   return `${year}-${month}-${day}`;
 }
 
-export function MeetingForm({ onCreateMeeting, onCancel }: MeetingFormProps) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [date, setDate] = useState(getTodayDate());
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
-  const [location, setLocation] = useState("");
-  const [meetingType, setMeetingType] = useState<MeetingType>("work");
+export function MeetingForm({
+  meeting,
+  onCreateMeeting,
+  onUpdateMeeting,
+  onCancel,
+}: MeetingFormProps) {
+  const isEditing = Boolean(meeting);
+
+  const [title, setTitle] = useState(meeting?.title ?? "");
+  const [description, setDescription] = useState(meeting?.description ?? "");
+  const [date, setDate] = useState(meeting?.date ?? getTodayDate());
+  const [startTime, setStartTime] = useState(meeting?.startTime ?? "");
+  const [endTime, setEndTime] = useState(meeting?.endTime ?? "");
+  const [location, setLocation] = useState(meeting?.location ?? "");
+  const [meetingType, setMeetingType] = useState<MeetingType>(
+    meeting?.type ?? "work",
+  );
   const [attendeeInput, setAttendeeInput] = useState("");
-  const [attendees, setAttendees] = useState<string[]>([]);
+  const [attendees, setAttendees] = useState<string[]>(
+    meeting?.attendees ?? [],
+  );
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+
+  useEffect(() => {
+    if (!meeting) {
+      return;
+    }
+
+    setTitle(meeting.title);
+    setDescription(meeting.description ?? "");
+    setDate(meeting.date);
+    setStartTime(meeting.startTime);
+    setEndTime(meeting.endTime);
+    setLocation(meeting.location ?? "");
+    setMeetingType(meeting.type);
+    setAttendees(meeting.attendees);
+  }, [meeting]);
 
   function addAttendee() {
     const name = attendeeInput.trim();
@@ -94,11 +120,6 @@ export function MeetingForm({ onCreateMeeting, onCancel }: MeetingFormProps) {
 
     setAttendees((current) => [...current, name]);
     setAttendeeInput("");
-
-    setErrors((current) => ({
-      ...current,
-      attendees: undefined,
-    }));
   }
 
   function removeAttendee(name: string) {
@@ -161,22 +182,38 @@ export function MeetingForm({ onCreateMeeting, onCancel }: MeetingFormProps) {
     setErrors({});
     setIsSubmitting(true);
 
-    const newMeeting: Meeting = {
-      id: crypto.randomUUID(),
-      title: title.trim(),
-      description: description.trim() || undefined,
-      date,
-      startTime,
-      endTime,
-      location: location.trim() || undefined,
-      type: meetingType,
-      attendees,
-      completed: false,
-    };
+    if (isEditing && meeting) {
+      const updatedMeeting: Meeting = {
+        ...meeting,
+        title: title.trim(),
+        description: description.trim() || undefined,
+        date,
+        startTime,
+        endTime,
+        location: location.trim() || undefined,
+        type: meetingType,
+        attendees,
+      };
 
-    onCreateMeeting(newMeeting);
+      onUpdateMeeting?.(updatedMeeting);
+      setSuccessMessage("Meeting updated successfully.");
+    } else {
+      const newMeeting: Meeting = {
+        id: crypto.randomUUID(),
+        title: title.trim(),
+        description: description.trim() || undefined,
+        date,
+        startTime,
+        endTime,
+        location: location.trim() || undefined,
+        type: meetingType,
+        attendees,
+        completed: false,
+      };
 
-    setSuccessMessage("Meeting created successfully.");
+      onCreateMeeting?.(newMeeting);
+      setSuccessMessage("Meeting created successfully.");
+    }
 
     window.setTimeout(() => {
       setIsSubmitting(false);
@@ -198,11 +235,13 @@ export function MeetingForm({ onCreateMeeting, onCancel }: MeetingFormProps) {
               id="meeting-form-title"
               className="text-lg font-bold tracking-tight text-slate-950"
             >
-              Schedule a meeting
+              {isEditing ? "Edit meeting" : "Schedule a meeting"}
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Add the details for your new appointment.
+              {isEditing
+                ? "Update the details for this appointment."
+                : "Add the details for your new appointment."}
             </p>
           </div>
 
@@ -320,7 +359,7 @@ export function MeetingForm({ onCreateMeeting, onCancel }: MeetingFormProps) {
                 )}
               </div>
 
-              <div className="sm:col-span-1">
+              <div>
                 <label
                   htmlFor="meeting-start-time"
                   className="mb-2 block text-sm font-semibold text-slate-800"
@@ -457,7 +496,7 @@ export function MeetingForm({ onCreateMeeting, onCancel }: MeetingFormProps) {
                 onChange={(event) =>
                   setMeetingType(event.target.value as MeetingType)
                 }
-                className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-shadow focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-shadow focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
               >
                 {meetingTypes.map((type) => (
                   <option key={type.value} value={type.value}>
@@ -526,12 +565,6 @@ export function MeetingForm({ onCreateMeeting, onCancel }: MeetingFormProps) {
                   ))}
                 </div>
               )}
-
-              {errors.attendees && (
-                <p className="mt-1.5 text-xs font-medium text-red-600">
-                  {errors.attendees}
-                </p>
-              )}
             </div>
           </div>
 
@@ -553,12 +586,12 @@ export function MeetingForm({ onCreateMeeting, onCancel }: MeetingFormProps) {
               {isSubmitting ? (
                 <>
                   <Loader2 size={17} className="animate-spin" />
-                  Creating...
+                  {isEditing ? "Saving..." : "Creating..."}
                 </>
               ) : (
                 <>
                   <CalendarDays size={17} />
-                  Create meeting
+                  {isEditing ? "Save changes" : "Create meeting"}
                 </>
               )}
             </button>
