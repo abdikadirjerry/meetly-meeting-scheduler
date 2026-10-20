@@ -5,10 +5,10 @@ import { ArrowRight, CalendarDays, Clock3, Plus, Sparkles } from "lucide-react";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { MeetingCard } from "@/components/meeting-card";
+import { MeetingDetails } from "@/components/meeting-details";
 import { MeetingForm } from "@/components/meeting-form";
 import { MobileSidebar } from "@/components/mobile-sidebar";
 import { StatCard } from "@/components/stat-card";
-import { TopHeader } from "@/components/top-header";
 import type { Meeting } from "@/types/meeting";
 import {
   getMeetingDateTime,
@@ -51,6 +51,10 @@ export default function Home() {
 
   const [isMeetingFormOpen, setIsMeetingFormOpen] = useState(false);
 
+  const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
+
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+
   const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
 
   const statistics = useMemo(() => {
@@ -84,12 +88,83 @@ export default function Home() {
     setMeetings((currentMeetings) => [...currentMeetings, newMeeting]);
   }
 
-  function openMeetingForm() {
+  function handleUpdateMeeting(updatedMeeting: Meeting) {
+    setMeetings((currentMeetings) =>
+      currentMeetings.map((meeting) =>
+        meeting.id === updatedMeeting.id ? updatedMeeting : meeting,
+      ),
+    );
+
+    setSelectedMeeting(updatedMeeting);
+  }
+
+  function handleDeleteMeeting(id: string) {
+    const meetingToDelete = meetings.find((meeting) => meeting.id === id);
+
+    if (!meetingToDelete) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${meetingToDelete.title}"?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMeetings((currentMeetings) =>
+      currentMeetings.filter((meeting) => meeting.id !== id),
+    );
+
+    setSelectedMeeting(null);
+    setEditingMeeting(null);
+    setIsMeetingFormOpen(false);
+  }
+
+  function handleToggleComplete(id: string) {
+    setMeetings((currentMeetings) =>
+      currentMeetings.map((meeting) =>
+        meeting.id === id
+          ? {
+              ...meeting,
+              completed: !meeting.completed,
+            }
+          : meeting,
+      ),
+    );
+
+    setSelectedMeeting((currentMeeting) =>
+      currentMeeting && currentMeeting.id === id
+        ? {
+            ...currentMeeting,
+            completed: !currentMeeting.completed,
+          }
+        : currentMeeting,
+    );
+  }
+
+  function openCreateForm() {
+    setEditingMeeting(null);
+    setIsMeetingFormOpen(true);
+  }
+
+  function openEditForm(meeting: Meeting) {
+    setSelectedMeeting(null);
+    setEditingMeeting(meeting);
     setIsMeetingFormOpen(true);
   }
 
   function closeMeetingForm() {
     setIsMeetingFormOpen(false);
+    setEditingMeeting(null);
+  }
+
+  function openMeetingDetails(meeting: Meeting) {
+    const currentMeeting =
+      meetings.find((item) => item.id === meeting.id) ?? meeting;
+
+    setSelectedMeeting(currentMeeting);
   }
 
   return (
@@ -103,7 +178,39 @@ export default function Home() {
         />
 
         <div className="min-w-0 flex-1">
-          <TopHeader onMenuClick={() => setIsMobileSidebarOpen(true)} />
+          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+            <div className="flex h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsMobileSidebarOpen(true)}
+                  aria-label="Open navigation"
+                  className="rounded-xl p-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+                >
+                  <span className="text-xl">☰</span>
+                </button>
+
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-slate-500">
+                    Welcome back
+                  </p>
+
+                  <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                    Your meetings
+                  </h1>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={openCreateForm}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800"
+              >
+                <Plus size={17} />
+                <span className="hidden sm:inline">Schedule Meeting</span>
+              </button>
+            </div>
+          </header>
 
           <main className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
             <section className="mb-8">
@@ -126,7 +233,7 @@ export default function Home() {
 
                 <button
                   type="button"
-                  onClick={openMeetingForm}
+                  onClick={openCreateForm}
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800"
                 >
                   <Plus size={18} />
@@ -192,7 +299,16 @@ export default function Home() {
                     upcomingMeetings
                       .slice(0, 3)
                       .map((meeting) => (
-                        <MeetingCard key={meeting.id} meeting={meeting} />
+                        <MeetingCard
+                          key={meeting.id}
+                          meeting={meeting}
+                          onView={() => openMeetingDetails(meeting)}
+                          onEdit={() => openEditForm(meeting)}
+                          onDelete={() => handleDeleteMeeting(meeting.id)}
+                          onToggleComplete={() =>
+                            handleToggleComplete(meeting.id)
+                          }
+                        />
                       ))
                   ) : (
                     <div className="flex min-h-64 items-center justify-center px-4 py-10">
@@ -212,7 +328,7 @@ export default function Home() {
 
                         <button
                           type="button"
-                          onClick={openMeetingForm}
+                          onClick={openCreateForm}
                           className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950"
                         >
                           <Plus size={16} />
@@ -235,7 +351,15 @@ export default function Home() {
 
                 <div className="p-5 sm:p-6">
                   {nextMeeting ? (
-                    <MeetingCard meeting={nextMeeting} />
+                    <MeetingCard
+                      meeting={nextMeeting}
+                      onView={() => openMeetingDetails(nextMeeting)}
+                      onEdit={() => openEditForm(nextMeeting)}
+                      onDelete={() => handleDeleteMeeting(nextMeeting.id)}
+                      onToggleComplete={() =>
+                        handleToggleComplete(nextMeeting.id)
+                      }
+                    />
                   ) : (
                     <div className="flex min-h-64 items-center justify-center px-4 py-10">
                       <div className="text-center">
@@ -263,8 +387,20 @@ export default function Home() {
 
       {isMeetingFormOpen && (
         <MeetingForm
+          meeting={editingMeeting ?? undefined}
           onCreateMeeting={handleCreateMeeting}
+          onUpdateMeeting={handleUpdateMeeting}
           onCancel={closeMeetingForm}
+        />
+      )}
+
+      {selectedMeeting && (
+        <MeetingDetails
+          meeting={selectedMeeting}
+          onClose={() => setSelectedMeeting(null)}
+          onEdit={() => openEditForm(selectedMeeting)}
+          onDelete={() => handleDeleteMeeting(selectedMeeting.id)}
+          onToggleComplete={() => handleToggleComplete(selectedMeeting.id)}
         />
       )}
     </div>

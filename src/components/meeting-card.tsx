@@ -1,4 +1,15 @@
-import { CalendarDays, Clock3, MapPin, Users } from "lucide-react";
+"use client";
+
+import {
+  CalendarDays,
+  Check,
+  Clock3,
+  Eye,
+  MapPin,
+  Pencil,
+  Trash2,
+  Users,
+} from "lucide-react";
 
 import type { Meeting } from "@/types/meeting";
 import {
@@ -9,6 +20,10 @@ import {
 
 interface MeetingCardProps {
   meeting: Meeting;
+  onView?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onToggleComplete?: () => void;
 }
 
 const typeStyles: Record<Meeting["type"], string> = {
@@ -19,9 +34,19 @@ const typeStyles: Record<Meeting["type"], string> = {
   other: "bg-slate-100 text-slate-700",
 };
 
-export function MeetingCard({ meeting }: MeetingCardProps) {
+export function MeetingCard({
+  meeting,
+  onView,
+  onEdit,
+  onDelete,
+  onToggleComplete,
+}: MeetingCardProps) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+    <article
+      className={`rounded-2xl border bg-white p-5 shadow-sm transition-shadow hover:shadow-md ${
+        meeting.completed ? "border-slate-200 opacity-75" : "border-slate-200"
+      }`}
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -32,20 +57,59 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
             </span>
 
             {meeting.completed && (
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                 Completed
               </span>
             )}
           </div>
 
-          <h3 className="truncate text-base font-semibold text-slate-900">
+          <button
+            type="button"
+            onClick={onView}
+            className="text-left text-base font-semibold text-slate-900 transition-colors hover:text-slate-600"
+          >
             {meeting.title}
-          </h3>
+          </button>
 
           {meeting.description && (
             <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-500">
               {meeting.description}
             </p>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          {onView && (
+            <button
+              type="button"
+              onClick={onView}
+              aria-label={`View ${meeting.title}`}
+              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
+            >
+              <Eye size={17} />
+            </button>
+          )}
+
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={`Edit ${meeting.title}`}
+              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
+            >
+              <Pencil size={17} />
+            </button>
+          )}
+
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={`Delete ${meeting.title}`}
+              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+            >
+              <Trash2 size={17} />
+            </button>
           )}
         </div>
       </div>
@@ -81,6 +145,19 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
           </div>
         )}
       </div>
+
+      {onToggleComplete && !meeting.completed && (
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            onClick={onToggleComplete}
+            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900"
+          >
+            <Check size={15} />
+            Mark as completed
+          </button>
+        </div>
+      )}
     </article>
   );
 }
