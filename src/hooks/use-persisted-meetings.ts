@@ -31,27 +31,39 @@ export function usePersistedMeetings(initialMeetings: Meeting[]) {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    try {
-      const storedValue = window.localStorage.getItem(STORAGE_KEY);
+    let cancelled = false;
 
-      if (storedValue !== null) {
-        const parsedValue: unknown = JSON.parse(storedValue);
-
-        if (Array.isArray(parsedValue) && parsedValue.every(isMeeting)) {
-          setMeetings(parsedValue);
-        } else {
-          console.warn(
-            "Meetly found invalid saved meeting data. Using the initial meetings.",
-          );
-        }
+    queueMicrotask(() => {
+      if (cancelled) {
+        return;
       }
-    } catch {
-      console.warn(
-        "Meetly could not read saved meetings. Using the initial meetings.",
-      );
-    } finally {
-      setIsLoaded(true);
-    }
+
+      try {
+        const storedValue = window.localStorage.getItem(STORAGE_KEY);
+
+        if (storedValue !== null) {
+          const parsedValue: unknown = JSON.parse(storedValue);
+
+          if (Array.isArray(parsedValue) && parsedValue.every(isMeeting)) {
+            setMeetings(parsedValue);
+          } else {
+            console.warn(
+              "Meetly found invalid saved meeting data. Using the initial meetings.",
+            );
+          }
+        }
+      } catch {
+        console.warn(
+          "Meetly could not read saved meetings. Using the initial meetings.",
+        );
+      } finally {
+        setIsLoaded(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

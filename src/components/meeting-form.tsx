@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import {
   CalendarDays,
@@ -15,7 +15,6 @@ import {
 
 import type { Meeting, MeetingType } from "@/types/meeting";
 import { getScheduleValidationError } from "@/lib/meeting-scheduling";
-import { usePersistedMeetings } from "@/hooks/use-persisted-meetings";
 
 interface MeetingFormProps {
   meeting?: Meeting;
@@ -74,21 +73,6 @@ export function MeetingForm({
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
-
-  useEffect(() => {
-    if (!meeting) {
-      return;
-    }
-
-    setTitle(meeting.title);
-    setDescription(meeting.description ?? "");
-    setDate(meeting.date);
-    setStartTime(meeting.startTime);
-    setEndTime(meeting.endTime);
-    setLocation(meeting.location ?? "");
-    setMeetingType(meeting.type);
-    setAttendees(meeting.attendees ?? []);
-  }, [meeting]);
 
   function addAttendee() {
     const name = attendeeInput.trim();
