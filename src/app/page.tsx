@@ -7,7 +7,10 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { MeetingCard } from "@/components/meeting-card";
 import { MeetingDetails } from "@/components/meeting-details";
 import { MeetingFilters } from "@/components/meeting-filters";
-import type { MeetingStatusFilter } from "@/components/meeting-filters";
+import type {
+  MeetingSortOption,
+  MeetingStatusFilter,
+} from "@/components/meeting-filters";
 import { MeetingForm } from "@/components/meeting-form";
 import { MobileSidebar } from "@/components/mobile-sidebar";
 import { StatCard } from "@/components/stat-card";
@@ -59,29 +62,23 @@ export default function Home() {
 
   const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
 
-  // Part 6: Search and filters
   const [search, setSearch] = useState("");
 
   const [typeFilter, setTypeFilter] = useState<Meeting["type"] | "all">("all");
 
   const [statusFilter, setStatusFilter] = useState<MeetingStatusFilter>("all");
 
+  const [sortOption, setSortOption] = useState<MeetingSortOption>("date-asc");
+
   const statistics = useMemo(() => {
-    const today = meetings.filter(isMeetingToday).length;
-
-    const upcoming = meetings.filter(isMeetingUpcoming).length;
-
-    const completed = meetings.filter((meeting) => meeting.completed).length;
-
     return {
       total: meetings.length,
-      today,
-      upcoming,
-      completed,
+      today: meetings.filter(isMeetingToday).length,
+      upcoming: meetings.filter(isMeetingUpcoming).length,
+      completed: meetings.filter((meeting) => meeting.completed).length,
     };
   }, [meetings]);
 
-  // All upcoming meetings, independent from search/filter UI.
   const upcomingMeetings = useMemo(() => {
     return meetings
       .filter(isMeetingUpcoming)
@@ -92,72 +89,89 @@ export default function Home() {
       );
   }, [meetings]);
 
-  // The closest upcoming meeting.
   const nextMeeting = upcomingMeetings[0] ?? null;
 
-  // Part 6: filtered and sorted meetings
   const filteredMeetings = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
+    const now = new Date();
 
     return meetings
       .filter((meeting) => {
-        // Type filter
         if (typeFilter !== "all" && meeting.type !== typeFilter) {
           return false;
         }
 
-        // Status filter
+        const meetingDateTime = getMeetingDateTime(
+          meeting.date,
+          meeting.startTime,
+        );
+
+        if (
+          statusFilter === "upcoming" &&
+          (!isMeetingUpcoming(meeting) || meeting.completed)
+        ) {
+          return false;
+        }
+
+        if (statusFilter === "past" && meetingDateTime >= now) {
+          return false;
+        }
+
         if (statusFilter === "completed" && !meeting.completed) {
           return false;
         }
 
-        if (statusFilter === "upcoming" && meeting.completed) {
-          return false;
+        if (normalizedSearch) {
+          const searchableText = [
+            meeting.title,
+            meeting.description ?? "",
+            meeting.location ?? "",
+            meeting.type,
+            ...meeting.attendees,
+          ]
+            .join(" ")
+            .toLowerCase();
+
+          if (!searchableText.includes(normalizedSearch)) {
+            return false;
+          }
         }
 
-        // Search filter
-        if (!normalizedSearch) {
-          return true;
-        }
-
-        const searchableText = [
-          meeting.title,
-          meeting.description,
-          meeting.location,
-          ...meeting.attendees,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-
-        return searchableText.includes(normalizedSearch);
+        return true;
       })
-      .sort(
-        (a, b) =>
+      .sort((a, b) => {
+        if (sortOption === "title-asc") {
+          return a.title.localeCompare(b.title);
+        }
+
+        const difference =
           getMeetingDateTime(a.date, a.startTime).getTime() -
-          getMeetingDateTime(b.date, b.startTime).getTime(),
-      );
-  }, [meetings, search, typeFilter, statusFilter]);
+          getMeetingDateTime(b.date, b.startTime).getTime();
+
+        return sortOption === "date-desc" ? -difference : difference;
+      });
+  }, [meetings, search, typeFilter, statusFilter, sortOption]);
 
   function clearFilters() {
     setSearch("");
     setTypeFilter("all");
     setStatusFilter("all");
+    setSortOption("date-asc");
   }
 
-  function hasActiveFilters() {
-    return (
-      search.trim() !== "" || typeFilter !== "all" || statusFilter !== "all"
-    );
-  }
+  const hasActiveFilters =
+    search.trim() !== "" ||
+    typeFilter !== "all" ||
+    statusFilter !== "all" ||
+    sortOption !== "date-asc";
 
   function handleCreateMeeting(newMeeting: Meeting) {
-    setMeetings((currentMeetings) => [...currentMeetings, newMeeting]);
+    setMeetings((current) => [...current, newMeeting]);
   }
 
   function handleUpdateMeeting(updatedMeeting: Meeting) {
-    setMeetings((currentMeetings) =>
-      currentMeetings.map((meeting) =>
+    setMeetings((current) =>
+      current.map((meeting) =>
         meeting.id === updatedMeeting.id ? updatedMeeting : meeting,
       ),
     );
@@ -180,9 +194,7 @@ export default function Home() {
       return;
     }
 
-    setMeetings((currentMeetings) =>
-      currentMeetings.filter((meeting) => meeting.id !== id),
-    );
+    setMeetings((current) => current.filter((meeting) => meeting.id !== id));
 
     setSelectedMeeting(null);
     setEditingMeeting(null);
@@ -190,24 +202,18 @@ export default function Home() {
   }
 
   function handleToggleComplete(id: string) {
-    setMeetings((currentMeetings) =>
-      currentMeetings.map((meeting) =>
+    setMeetings((current) =>
+      current.map((meeting) =>
         meeting.id === id
-          ? {
-              ...meeting,
-              completed: !meeting.completed,
-            }
+          ? { ...meeting, completed: !meeting.completed }
           : meeting,
       ),
     );
 
-    setSelectedMeeting((currentMeeting) =>
-      currentMeeting && currentMeeting.id === id
-        ? {
-            ...currentMeeting,
-            completed: !currentMeeting.completed,
-          }
-        : currentMeeting,
+    setSelectedMeeting((current) =>
+      current && current.id === id
+        ? { ...current, completed: !current.completed }
+        : current,
     );
   }
 
@@ -234,22 +240,26 @@ export default function Home() {
     setSelectedMeeting(currentMeeting);
   }
 
-  const filteredCount = filteredMeetings.length;
+  const listTitle =
+    statusFilter === "completed"
+      ? "Completed meetings"
+      : statusFilter === "past"
+        ? "Past meetings"
+        : statusFilter === "upcoming"
+          ? "Upcoming meetings"
+          : "All meetings";
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="flex min-h-screen">
-        {/* Desktop sidebar */}
         <AppSidebar />
 
-        {/* Mobile sidebar */}
         <MobileSidebar
           isOpen={isMobileSidebarOpen}
           onClose={() => setIsMobileSidebarOpen(false)}
         />
 
         <div className="min-w-0 flex-1">
-          {/* Header */}
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
             <div className="flex h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
               <div className="flex min-w-0 items-center gap-3">
@@ -257,7 +267,7 @@ export default function Home() {
                   type="button"
                   onClick={() => setIsMobileSidebarOpen(true)}
                   aria-label="Open navigation"
-                  className="rounded-xl p-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+                  className="rounded-xl p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
                 >
                   <span className="text-xl">☰</span>
                 </button>
@@ -266,7 +276,6 @@ export default function Home() {
                   <p className="truncate text-sm text-slate-500">
                     Welcome back
                   </p>
-
                   <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
                     Your meetings
                   </h1>
@@ -276,18 +285,15 @@ export default function Home() {
               <button
                 type="button"
                 onClick={openCreateForm}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800"
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 <Plus size={17} />
-
                 <span className="hidden sm:inline">Schedule Meeting</span>
               </button>
             </div>
           </header>
 
-          {/* Main content */}
           <main className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-            {/* Hero */}
             <section className="mb-8">
               <div className="flex flex-col justify-between gap-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:flex-row lg:items-center">
                 <div className="max-w-2xl">
@@ -301,15 +307,15 @@ export default function Home() {
                   </h2>
 
                   <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
-                    Keep your meetings organized, see what is coming next, and
-                    make every appointment easy to manage.
+                    Manage your schedule, find appointments quickly, and keep
+                    every meeting organized.
                   </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={openCreateForm}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
                 >
                   <Plus size={18} />
                   Schedule Meeting
@@ -317,7 +323,6 @@ export default function Home() {
               </div>
             </section>
 
-            {/* Statistics */}
             <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard
                 label="Total meetings"
@@ -325,21 +330,18 @@ export default function Home() {
                 description="All scheduled meetings"
                 icon={CalendarDays}
               />
-
               <StatCard
                 label="Today"
                 value={statistics.today}
                 description="Meetings scheduled today"
                 icon={Clock3}
               />
-
               <StatCard
                 label="Upcoming"
                 value={statistics.upcoming}
                 description="Future meetings"
                 icon={Sparkles}
               />
-
               <StatCard
                 label="Completed"
                 value={statistics.completed}
@@ -348,55 +350,46 @@ export default function Home() {
               />
             </section>
 
-            {/* Search and filters */}
             <section className="mb-6">
               <MeetingFilters
                 search={search}
                 type={typeFilter}
                 status={statusFilter}
+                sort={sortOption}
                 onSearchChange={setSearch}
                 onTypeChange={setTypeFilter}
                 onStatusChange={setStatusFilter}
+                onSortChange={setSortOption}
                 onClear={clearFilters}
               />
             </section>
 
-            {/* Meeting sections */}
             <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-              {/* Filtered meetings */}
-              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-5 sm:px-6">
+              <div className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-col justify-between gap-3 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-center sm:px-6">
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-slate-900">
-                        {statusFilter === "completed"
-                          ? "Completed meetings"
-                          : statusFilter === "upcoming"
-                            ? "Upcoming meetings"
-                            : "Meetings"}
+                        {listTitle}
                       </h3>
 
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                        {filteredCount}
+                        {filteredMeetings.length}
                       </span>
                     </div>
 
                     <p className="mt-1 text-sm text-slate-500">
-                      {statusFilter === "completed"
-                        ? "Meetings you have already completed."
-                        : statusFilter === "upcoming"
-                          ? "Your next scheduled appointments."
-                          : "Your meetings sorted by date and time."}
+                      Search, filter, and sort your meetings.
                     </p>
                   </div>
 
-                  {hasActiveFilters() && (
+                  {hasActiveFilters && (
                     <button
                       type="button"
                       onClick={clearFilters}
-                      className="hidden items-center gap-1 text-sm font-semibold text-slate-600 transition-colors hover:text-slate-950 sm:flex"
+                      className="inline-flex items-center gap-1 self-start text-sm font-semibold text-slate-600 hover:text-slate-950 sm:self-auto"
                     >
-                      Clear
+                      Reset filters
                       <ArrowRight size={15} />
                     </button>
                   )}
@@ -404,20 +397,18 @@ export default function Home() {
 
                 <div className="space-y-4 p-5 sm:p-6">
                   {filteredMeetings.length > 0 ? (
-                    filteredMeetings
-                      .slice(0, 3)
-                      .map((meeting) => (
-                        <MeetingCard
-                          key={meeting.id}
-                          meeting={meeting}
-                          onView={() => openMeetingDetails(meeting)}
-                          onEdit={() => openEditForm(meeting)}
-                          onDelete={() => handleDeleteMeeting(meeting.id)}
-                          onToggleComplete={() =>
-                            handleToggleComplete(meeting.id)
-                          }
-                        />
-                      ))
+                    filteredMeetings.map((meeting) => (
+                      <MeetingCard
+                        key={meeting.id}
+                        meeting={meeting}
+                        onView={() => openMeetingDetails(meeting)}
+                        onEdit={() => openEditForm(meeting)}
+                        onDelete={() => handleDeleteMeeting(meeting.id)}
+                        onToggleComplete={() =>
+                          handleToggleComplete(meeting.id)
+                        }
+                      />
+                    ))
                   ) : (
                     <div className="flex min-h-64 items-center justify-center px-4 py-10">
                       <div className="max-w-sm text-center">
@@ -426,33 +417,33 @@ export default function Home() {
                         </div>
 
                         <h4 className="mt-5 font-semibold text-slate-900">
-                          {hasActiveFilters()
+                          {hasActiveFilters
                             ? "No meetings found"
                             : "No meetings yet"}
                         </h4>
 
                         <p className="mt-2 text-sm leading-6 text-slate-500">
-                          {hasActiveFilters()
-                            ? "Try changing your search or filters to find a meeting."
-                            : "Your schedule is clear. Create your first meeting to start organizing your calendar."}
+                          {hasActiveFilters
+                            ? "Try changing your search, filters, or sorting options."
+                            : "Your schedule is clear. Create your first meeting to get started."}
                         </p>
 
                         <button
                           type="button"
                           onClick={
-                            hasActiveFilters() ? clearFilters : openCreateForm
+                            hasActiveFilters ? clearFilters : openCreateForm
                           }
-                          className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950"
+                          className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                         >
-                          {hasActiveFilters() ? (
+                          {hasActiveFilters ? (
                             <>
-                              <span className="text-base">×</span>
-                              Clear filters
+                              <span aria-hidden="true">×</span>
+                              Reset filters
                             </>
                           ) : (
                             <>
                               <Plus size={16} />
-                              Create your first meeting
+                              Schedule your first meeting
                             </>
                           )}
                         </button>
@@ -460,21 +451,11 @@ export default function Home() {
                     </div>
                   )}
                 </div>
-
-                {filteredMeetings.length > 3 && (
-                  <div className="border-t border-slate-100 px-5 py-4 sm:px-6">
-                    <p className="text-center text-xs font-medium text-slate-400">
-                      Showing 3 of {filteredMeetings.length} matching meetings
-                    </p>
-                  </div>
-                )}
               </div>
 
-              {/* Next meeting */}
-              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="border-b border-slate-200 px-5 py-5 sm:px-6">
                   <h3 className="font-semibold text-slate-900">Next meeting</h3>
-
                   <p className="mt-1 text-sm text-slate-500">
                     Your closest upcoming appointment.
                   </p>
@@ -503,14 +484,13 @@ export default function Home() {
                         </h4>
 
                         <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">
-                          Once you schedule a meeting, its details will appear
-                          in this section.
+                          Your next upcoming meeting will appear here.
                         </p>
 
                         <button
                           type="button"
                           onClick={openCreateForm}
-                          className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950"
+                          className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                         >
                           <Plus size={16} />
                           Schedule meeting
@@ -525,7 +505,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Create / Edit meeting modal */}
       {isMeetingFormOpen && (
         <MeetingForm
           meeting={editingMeeting ?? undefined}
@@ -535,7 +514,6 @@ export default function Home() {
         />
       )}
 
-      {/* Meeting details modal */}
       {selectedMeeting && (
         <MeetingDetails
           meeting={selectedMeeting}
