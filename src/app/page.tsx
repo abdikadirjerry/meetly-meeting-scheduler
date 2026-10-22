@@ -20,6 +20,8 @@ import {
   isMeetingToday,
   isMeetingUpcoming,
 } from "@/lib/meeting-utils";
+import { getScheduleValidationError } from "@/lib/meeting-scheduling";
+import { usePersistedMeetings } from "@/hooks/use-persisted-meetings";
 
 const initialMeetings: Meeting[] = [
   {
@@ -53,47 +55,44 @@ const initialMeetings: Meeting[] = [
 
 export default function Home() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-
   const [isMeetingFormOpen, setIsMeetingFormOpen] = useState(false);
-
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
-
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
 
-  const [meetings, setMeetings] = useState<Meeting[]>(initialMeetings);
+  const { meetings, setMeetings, isLoaded } =
+    usePersistedMeetings(initialMeetings);
 
   const [search, setSearch] = useState("");
-
   const [typeFilter, setTypeFilter] = useState<Meeting["type"] | "all">("all");
-
   const [statusFilter, setStatusFilter] = useState<MeetingStatusFilter>("all");
+  const [sort, setSort] = useState<MeetingSortOption>("date-asc");
 
-  const [sortOption, setSortOption] = useState<MeetingSortOption>("date-asc");
-
-  const statistics = useMemo(() => {
-    return {
+  const statistics = useMemo(
+    () => ({
       total: meetings.length,
       today: meetings.filter(isMeetingToday).length,
       upcoming: meetings.filter(isMeetingUpcoming).length,
       completed: meetings.filter((meeting) => meeting.completed).length,
-    };
-  }, [meetings]);
+    }),
+    [meetings],
+  );
 
-  const upcomingMeetings = useMemo(() => {
-    return meetings
-      .filter(isMeetingUpcoming)
-      .sort(
-        (a, b) =>
-          getMeetingDateTime(a.date, a.startTime).getTime() -
-          getMeetingDateTime(b.date, b.startTime).getTime(),
-      );
-  }, [meetings]);
+  const upcomingMeetings = useMemo(
+    () =>
+      meetings
+        .filter(isMeetingUpcoming)
+        .sort(
+          (a, b) =>
+            getMeetingDateTime(a.date, a.startTime).getTime() -
+            getMeetingDateTime(b.date, b.startTime).getTime(),
+        ),
+    [meetings],
+  );
 
-  const nextMeeting = upcomingMeetings[0] ?? null;
+  const nextMeeting = upcomingMeetings[0];
 
   const filteredMeetings = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
-    const now = new Date();
 
     return meetings
       .filter((meeting) => {
@@ -101,46 +100,39 @@ export default function Home() {
           return false;
         }
 
-        const meetingDateTime = getMeetingDateTime(
-          meeting.date,
-          meeting.startTime,
-        );
-
-        if (
-          statusFilter === "upcoming" &&
-          (!isMeetingUpcoming(meeting) || meeting.completed)
-        ) {
-          return false;
-        }
-
-        if (statusFilter === "past" && meetingDateTime >= now) {
-          return false;
-        }
-
         if (statusFilter === "completed" && !meeting.completed) {
           return false;
         }
 
-        if (normalizedSearch) {
-          const searchableText = [
-            meeting.title,
-            meeting.description ?? "",
-            meeting.location ?? "",
-            meeting.type,
-            ...meeting.attendees,
-          ]
-            .join(" ")
-            .toLowerCase();
+        if (statusFilter === "upcoming" && !isMeetingUpcoming(meeting)) {
+          return false;
+        }
 
-          if (!searchableText.includes(normalizedSearch)) {
+        if (statusFilter === "past") {
+          const endDateTime = getMeetingDateTime(meeting.date, meeting.endTime);
+
+          if (endDateTime >= new Date() || meeting.completed) {
             return false;
           }
         }
 
-        return true;
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        const searchableText = [
+          meeting.title,
+          meeting.description ?? "",
+          meeting.location ?? "",
+          ...meeting.attendees,
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        return searchableText.includes(normalizedSearch);
       })
       .sort((a, b) => {
-        if (sortOption === "title-asc") {
+        if (sort === "title-asc") {
           return a.title.localeCompare(b.title);
         }
 
@@ -148,28 +140,43 @@ export default function Home() {
           getMeetingDateTime(a.date, a.startTime).getTime() -
           getMeetingDateTime(b.date, b.startTime).getTime();
 
-        return sortOption === "date-desc" ? -difference : difference;
+        return sort === "date-desc" ? -difference : difference;
       });
-  }, [meetings, search, typeFilter, statusFilter, sortOption]);
+  }, [meetings, search, typeFilter, statusFilter, sort]);
 
   function clearFilters() {
     setSearch("");
     setTypeFilter("all");
     setStatusFilter("all");
-    setSortOption("date-asc");
+    setSort("date-asc");
   }
 
   const hasActiveFilters =
     search.trim() !== "" ||
     typeFilter !== "all" ||
     statusFilter !== "all" ||
-    sortOption !== "date-asc";
+    sort !== "date-asc";
 
-  function handleCreateMeeting(newMeeting: Meeting) {
+  function handleCreateMeeting(newMeeting: Meeting): boolean {
+    const error = getScheduleValidationError(newMeeting, meetings);
+
+    if (error) {
+      window.alert(error);
+      return false;
+    }
+
     setMeetings((current) => [...current, newMeeting]);
+    return true;
   }
 
-  function handleUpdateMeeting(updatedMeeting: Meeting) {
+  function handleUpdateMeeting(updatedMeeting: Meeting): boolean {
+    const error = getScheduleValidationError(updatedMeeting, meetings);
+
+    if (error) {
+      window.alert(error);
+      return false;
+    }
+
     setMeetings((current) =>
       current.map((meeting) =>
         meeting.id === updatedMeeting.id ? updatedMeeting : meeting,
@@ -177,6 +184,7 @@ export default function Home() {
     );
 
     setSelectedMeeting(updatedMeeting);
+    return true;
   }
 
   function handleDeleteMeeting(id: string) {
@@ -186,16 +194,15 @@ export default function Home() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${meetingToDelete.title}"?`,
-    );
-
-    if (!confirmed) {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete "${meetingToDelete.title}"?`,
+      )
+    ) {
       return;
     }
 
     setMeetings((current) => current.filter((meeting) => meeting.id !== id));
-
     setSelectedMeeting(null);
     setEditingMeeting(null);
     setIsMeetingFormOpen(false);
@@ -211,7 +218,7 @@ export default function Home() {
     );
 
     setSelectedMeeting((current) =>
-      current && current.id === id
+      current?.id === id
         ? { ...current, completed: !current.completed }
         : current,
     );
@@ -234,20 +241,10 @@ export default function Home() {
   }
 
   function openMeetingDetails(meeting: Meeting) {
-    const currentMeeting =
-      meetings.find((item) => item.id === meeting.id) ?? meeting;
-
-    setSelectedMeeting(currentMeeting);
+    setSelectedMeeting(
+      meetings.find((item) => item.id === meeting.id) ?? meeting,
+    );
   }
-
-  const listTitle =
-    statusFilter === "completed"
-      ? "Completed meetings"
-      : statusFilter === "past"
-        ? "Past meetings"
-        : statusFilter === "upcoming"
-          ? "Upcoming meetings"
-          : "All meetings";
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -276,7 +273,7 @@ export default function Home() {
                   <p className="truncate text-sm text-slate-500">
                     Welcome back
                   </p>
-                  <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                  <h1 className="truncate text-lg font-bold text-slate-900 sm:text-xl">
                     Your meetings
                   </h1>
                 </div>
@@ -285,7 +282,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={openCreateForm}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 <Plus size={17} />
                 <span className="hidden sm:inline">Schedule Meeting</span>
@@ -301,14 +298,12 @@ export default function Home() {
                     <Sparkles size={14} />
                     Stay organized
                   </div>
-
                   <h2 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
                     Plan your day with confidence.
                   </h2>
-
                   <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
-                    Manage your schedule, find appointments quickly, and keep
-                    every meeting organized.
+                    Keep your meetings organized, see what is coming next, and
+                    make every appointment easy to manage.
                   </p>
                 </div>
 
@@ -355,31 +350,35 @@ export default function Home() {
                 search={search}
                 type={typeFilter}
                 status={statusFilter}
-                sort={sortOption}
+                sort={sort}
                 onSearchChange={setSearch}
                 onTypeChange={setTypeFilter}
                 onStatusChange={setStatusFilter}
-                onSortChange={setSortOption}
+                onSortChange={setSort}
                 onClear={clearFilters}
               />
             </section>
 
             <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-              <div className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="flex flex-col justify-between gap-3 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-center sm:px-6">
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-5 sm:px-6">
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-slate-900">
-                        {listTitle}
+                        {statusFilter === "completed"
+                          ? "Completed meetings"
+                          : statusFilter === "upcoming"
+                            ? "Upcoming meetings"
+                            : statusFilter === "past"
+                              ? "Past meetings"
+                              : "Meetings"}
                       </h3>
-
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
                         {filteredMeetings.length}
                       </span>
                     </div>
-
                     <p className="mt-1 text-sm text-slate-500">
-                      Search, filter, and sort your meetings.
+                      Manage and review your scheduled appointments.
                     </p>
                   </div>
 
@@ -387,16 +386,19 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={clearFilters}
-                      className="inline-flex items-center gap-1 self-start text-sm font-semibold text-slate-600 hover:text-slate-950 sm:self-auto"
+                      className="hidden items-center gap-1 text-sm font-semibold text-slate-600 hover:text-slate-950 sm:flex"
                     >
-                      Reset filters
-                      <ArrowRight size={15} />
+                      Clear <ArrowRight size={15} />
                     </button>
                   )}
                 </div>
 
                 <div className="space-y-4 p-5 sm:p-6">
-                  {filteredMeetings.length > 0 ? (
+                  {!isLoaded ? (
+                    <p className="py-12 text-center text-sm text-slate-500">
+                      Loading your saved meetings…
+                    </p>
+                  ) : filteredMeetings.length > 0 ? (
                     filteredMeetings.map((meeting) => (
                       <MeetingCard
                         key={meeting.id}
@@ -415,19 +417,16 @@ export default function Home() {
                         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
                           <CalendarDays size={25} />
                         </div>
-
                         <h4 className="mt-5 font-semibold text-slate-900">
                           {hasActiveFilters
                             ? "No meetings found"
                             : "No meetings yet"}
                         </h4>
-
                         <p className="mt-2 text-sm leading-6 text-slate-500">
                           {hasActiveFilters
-                            ? "Try changing your search, filters, or sorting options."
+                            ? "Try changing your search or filters."
                             : "Your schedule is clear. Create your first meeting to get started."}
                         </p>
-
                         <button
                           type="button"
                           onClick={
@@ -436,14 +435,11 @@ export default function Home() {
                           className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                         >
                           {hasActiveFilters ? (
-                            <>
-                              <span aria-hidden="true">×</span>
-                              Reset filters
-                            </>
+                            "Clear filters"
                           ) : (
                             <>
                               <Plus size={16} />
-                              Schedule your first meeting
+                              Create your first meeting
                             </>
                           )}
                         </button>
@@ -453,7 +449,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="border-b border-slate-200 px-5 py-5 sm:px-6">
                   <h3 className="font-semibold text-slate-900">Next meeting</h3>
                   <p className="mt-1 text-sm text-slate-500">
@@ -478,15 +474,12 @@ export default function Home() {
                         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
                           <Clock3 size={25} />
                         </div>
-
                         <h4 className="mt-5 font-semibold text-slate-900">
                           Nothing scheduled
                         </h4>
-
                         <p className="mt-2 max-w-xs text-sm leading-6 text-slate-500">
-                          Your next upcoming meeting will appear here.
+                          Your next appointment will appear here.
                         </p>
-
                         <button
                           type="button"
                           onClick={openCreateForm}
@@ -516,9 +509,17 @@ export default function Home() {
 
       {selectedMeeting && (
         <MeetingDetails
-          meeting={selectedMeeting}
+          meeting={
+            meetings.find((meeting) => meeting.id === selectedMeeting.id) ??
+            selectedMeeting
+          }
           onClose={() => setSelectedMeeting(null)}
-          onEdit={() => openEditForm(selectedMeeting)}
+          onEdit={() =>
+            openEditForm(
+              meetings.find((meeting) => meeting.id === selectedMeeting.id) ??
+                selectedMeeting,
+            )
+          }
           onDelete={() => handleDeleteMeeting(selectedMeeting.id)}
           onToggleComplete={() => handleToggleComplete(selectedMeeting.id)}
         />
