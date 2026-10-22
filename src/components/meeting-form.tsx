@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
 import {
   CalendarDays,
   Clock3,
@@ -13,11 +14,13 @@ import {
 } from "lucide-react";
 
 import type { Meeting, MeetingType } from "@/types/meeting";
+import { getScheduleValidationError } from "@/lib/meeting-scheduling";
+import { usePersistedMeetings } from "@/hooks/use-persisted-meetings";
 
 interface MeetingFormProps {
   meeting?: Meeting;
-  onCreateMeeting?: (meeting: Meeting) => void;
-  onUpdateMeeting?: (meeting: Meeting) => void;
+  onCreateMeeting?: (meeting: Meeting) => boolean | void;
+  onUpdateMeeting?: (meeting: Meeting) => boolean | void;
   onCancel: () => void;
 }
 
@@ -29,40 +32,22 @@ interface FormErrors {
   location?: string;
 }
 
-const meetingTypes: {
-  value: MeetingType;
-  label: string;
-}[] = [
-  {
-    value: "work",
-    label: "Work",
-  },
-  {
-    value: "personal",
-    label: "Personal",
-  },
-  {
-    value: "interview",
-    label: "Interview",
-  },
-  {
-    value: "education",
-    label: "Education",
-  },
-  {
-    value: "other",
-    label: "Other",
-  },
+const meetingTypes: { value: MeetingType; label: string }[] = [
+  { value: "work", label: "Work" },
+  { value: "personal", label: "Personal" },
+  { value: "interview", label: "Interview" },
+  { value: "education", label: "Education" },
+  { value: "other", label: "Other" },
 ];
 
 function getTodayDate() {
   const today = new Date();
 
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  return [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 export function MeetingForm({
@@ -82,15 +67,28 @@ export function MeetingForm({
   const [meetingType, setMeetingType] = useState<MeetingType>(
     meeting?.type ?? "work",
   );
-
   const [attendeeInput, setAttendeeInput] = useState("");
   const [attendees, setAttendees] = useState<string[]>(
     meeting?.attendees ?? [],
   );
-
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
+  const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    if (!meeting) {
+      return;
+    }
+
+    setTitle(meeting.title);
+    setDescription(meeting.description ?? "");
+    setDate(meeting.date);
+    setStartTime(meeting.startTime);
+    setEndTime(meeting.endTime);
+    setLocation(meeting.location ?? "");
+    setMeetingType(meeting.type);
+    setAttendees(meeting.attendees ?? []);
+  }, [meeting]);
 
   function addAttendee() {
     const name = attendeeInput.trim();
@@ -116,7 +114,7 @@ export function MeetingForm({
     setAttendees((current) => current.filter((attendee) => attendee !== name));
   }
 
-  function handleAttendeeKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+  function handleAttendeeKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       event.preventDefault();
       addAttendee();
@@ -124,34 +122,39 @@ export function MeetingForm({
   }
 
   function validateForm(): FormErrors {
-    const validationErrors: FormErrors = {};
+    const nextErrors: FormErrors = {};
 
     if (!title.trim()) {
-      validationErrors.title = "Meeting title is required.";
+      nextErrors.title = "Meeting title is required.";
     }
 
     if (!date) {
-      validationErrors.date = "Meeting date is required.";
+      nextErrors.date = "Meeting date is required.";
+    } else {
+      const parsedDate = new Date(`${date}T00:00:00`);
+
+      if (Number.isNaN(parsedDate.getTime()) || date.length !== 10) {
+        nextErrors.date = "Please enter a valid meeting date.";
+      }
     }
 
     if (!startTime) {
-      validationErrors.startTime = "Start time is required.";
+      nextErrors.startTime = "Start time is required.";
     }
 
     if (!endTime) {
-      validationErrors.endTime = "End time is required.";
+      nextErrors.endTime = "End time is required.";
     }
 
     if (startTime && endTime && endTime <= startTime) {
-      validationErrors.endTime = "End time must be later than the start time.";
+      nextErrors.endTime = "End time must be later than the start time.";
     }
 
     if (location.trim() && location.trim().length < 2) {
-      validationErrors.location =
-        "Location must contain at least 2 characters.";
+      nextErrors.location = "Location must contain at least 2 characters.";
     }
 
-    return validationErrors;
+    return nextErrors;
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -161,54 +164,55 @@ export function MeetingForm({
       return;
     }
 
-    const validationErrors = validateForm();
+    const nextErrors = validateForm();
 
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      setSuccessMessage("");
+    setErrors(nextErrors);
+    setFormError("");
+
+    if (Object.keys(nextErrors).length > 0) {
       return;
     }
 
-    setErrors({});
-    setIsSubmitting(true);
+    const meetingData: Meeting = {
+      id: meeting?.id ?? crypto.randomUUID(),
+      title: title.trim(),
+      description: description.trim() || undefined,
+      date,
+      startTime,
+      endTime,
+      location: location.trim() || undefined,
+      type: meetingType,
+      attendees,
+      completed: meeting?.completed ?? false,
+      ...(meeting?.meetingLink ? { meetingLink: meeting.meetingLink } : {}),
+    };
 
-    if (isEditing && meeting) {
-      const updatedMeeting: Meeting = {
-        ...meeting,
-        title: title.trim(),
-        description: description.trim() || undefined,
-        date,
-        startTime,
-        endTime,
-        location: location.trim() || undefined,
-        type: meetingType,
-        attendees,
-      };
-
-      onUpdateMeeting?.(updatedMeeting);
-      setSuccessMessage("Meeting updated successfully.");
-    } else {
-      const newMeeting: Meeting = {
-        id: crypto.randomUUID(),
-        title: title.trim(),
-        description: description.trim() || undefined,
-        date,
-        startTime,
-        endTime,
-        location: location.trim() || undefined,
-        type: meetingType,
-        attendees,
-        completed: false,
-      };
-
-      onCreateMeeting?.(newMeeting);
-      setSuccessMessage("Meeting created successfully.");
+    const scheduleError = getScheduleValidationError(meetingData, []);
+    if (scheduleError) {
+      setFormError(scheduleError);
+      return;
     }
 
-    window.setTimeout(() => {
-      setIsSubmitting(false);
+    setIsSubmitting(true);
+
+    try {
+      const result = meeting
+        ? onUpdateMeeting?.(meetingData)
+        : onCreateMeeting?.(meetingData);
+
+      if (result === false) {
+        setFormError(
+          "This meeting could not be saved. Review the schedule and try again.",
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
       onCancel();
-    }, 700);
+    } catch {
+      setFormError("Something went wrong while saving this meeting.");
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -227,7 +231,6 @@ export function MeetingForm({
             >
               {isEditing ? "Edit meeting" : "Schedule a meeting"}
             </h2>
-
             <p className="mt-1 text-sm text-slate-500">
               {isEditing
                 ? "Update the details for this appointment."
@@ -239,7 +242,7 @@ export function MeetingForm({
             type="button"
             onClick={onCancel}
             aria-label="Close meeting form"
-            className="rounded-xl p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
           >
             <X size={20} />
           </button>
@@ -247,13 +250,13 @@ export function MeetingForm({
 
         <form onSubmit={handleSubmit} noValidate>
           <div className="max-h-[calc(100vh-12rem)] space-y-6 overflow-y-auto px-5 py-6 sm:px-6">
-            {successMessage && (
-              <div
-                role="status"
-                className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700"
+            {formError && (
+              <p
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
               >
-                {successMessage}
-              </div>
+                {formError}
+              </p>
             )}
 
             <div>
@@ -263,26 +266,21 @@ export function MeetingForm({
               >
                 Meeting title <span className="text-red-500">*</span>
               </label>
-
               <input
                 id="meeting-title"
                 type="text"
                 value={title}
                 onChange={(event) => {
                   setTitle(event.target.value);
-                  setErrors((current) => ({
-                    ...current,
-                    title: undefined,
-                  }));
+                  setErrors((current) => ({ ...current, title: undefined }));
                 }}
                 placeholder="e.g. Project planning session"
-                className={`w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-shadow placeholder:text-slate-400 focus:ring-2 ${
+                className={`w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:ring-2 ${
                   errors.title
-                    ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                    : "border-slate-200 focus:border-slate-400 focus:ring-slate-100"
+                    ? "border-red-300 focus:ring-red-100"
+                    : "border-slate-200 focus:ring-slate-100"
                 }`}
               />
-
               {errors.title && (
                 <p className="mt-1.5 text-xs font-medium text-red-600">
                   {errors.title}
@@ -297,14 +295,13 @@ export function MeetingForm({
               >
                 Description
               </label>
-
               <textarea
                 id="meeting-description"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="Add a short description or agenda..."
                 rows={3}
-                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-shadow placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-100"
               />
             </div>
 
@@ -316,32 +313,22 @@ export function MeetingForm({
                 >
                   Date <span className="text-red-500">*</span>
                 </label>
-
                 <div className="relative">
                   <CalendarDays
                     size={18}
                     className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
                   />
-
                   <input
                     id="meeting-date"
                     type="date"
                     value={date}
                     onChange={(event) => {
                       setDate(event.target.value);
-                      setErrors((current) => ({
-                        ...current,
-                        date: undefined,
-                      }));
+                      setErrors((current) => ({ ...current, date: undefined }));
                     }}
-                    className={`w-full rounded-xl border bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition-shadow focus:ring-2 ${
-                      errors.date
-                        ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                        : "border-slate-200 focus:border-slate-400 focus:ring-slate-100"
-                    }`}
+                    className="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-100"
                   />
                 </div>
-
                 {errors.date && (
                   <p className="mt-1.5 text-xs font-medium text-red-600">
                     {errors.date}
@@ -356,13 +343,11 @@ export function MeetingForm({
                 >
                   Start time <span className="text-red-500">*</span>
                 </label>
-
                 <div className="relative">
                   <Clock3
                     size={18}
                     className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
                   />
-
                   <input
                     id="meeting-start-time"
                     type="time"
@@ -375,14 +360,9 @@ export function MeetingForm({
                         endTime: undefined,
                       }));
                     }}
-                    className={`w-full rounded-xl border bg-white py-3 pl-11 pr-3 text-sm text-slate-900 outline-none transition-shadow focus:ring-2 ${
-                      errors.startTime
-                        ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                        : "border-slate-200 focus:border-slate-400 focus:ring-slate-100"
-                    }`}
+                    className="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-100"
                   />
                 </div>
-
                 {errors.startTime && (
                   <p className="mt-1.5 text-xs font-medium text-red-600">
                     {errors.startTime}
@@ -397,13 +377,11 @@ export function MeetingForm({
                 >
                   End time <span className="text-red-500">*</span>
                 </label>
-
                 <div className="relative">
                   <Clock3
                     size={18}
                     className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
                   />
-
                   <input
                     id="meeting-end-time"
                     type="time"
@@ -415,14 +393,9 @@ export function MeetingForm({
                         endTime: undefined,
                       }));
                     }}
-                    className={`w-full rounded-xl border bg-white py-3 pl-11 pr-3 text-sm text-slate-900 outline-none transition-shadow focus:ring-2 ${
-                      errors.endTime
-                        ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                        : "border-slate-200 focus:border-slate-400 focus:ring-slate-100"
-                    }`}
+                    className="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-100"
                   />
                 </div>
-
                 {errors.endTime && (
                   <p className="mt-1.5 text-xs font-medium text-red-600">
                     {errors.endTime}
@@ -438,13 +411,11 @@ export function MeetingForm({
               >
                 Location or meeting link
               </label>
-
               <div className="relative">
                 <MapPin
                   size={18}
                   className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
                 />
-
                 <input
                   id="meeting-location"
                   type="text"
@@ -457,14 +428,9 @@ export function MeetingForm({
                     }));
                   }}
                   placeholder="e.g. Office, Google Meet, or meeting URL"
-                  className={`w-full rounded-xl border bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition-shadow placeholder:text-slate-400 focus:ring-2 ${
-                    errors.location
-                      ? "border-red-300 focus:border-red-400 focus:ring-red-100"
-                      : "border-slate-200 focus:border-slate-400 focus:ring-slate-100"
-                  }`}
+                  className="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-100"
                 />
               </div>
-
               {errors.location && (
                 <p className="mt-1.5 text-xs font-medium text-red-600">
                   {errors.location}
@@ -479,14 +445,13 @@ export function MeetingForm({
               >
                 Meeting type
               </label>
-
               <select
                 id="meeting-type"
                 value={meetingType}
                 onChange={(event) =>
                   setMeetingType(event.target.value as MeetingType)
                 }
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-shadow focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-100"
               >
                 {meetingTypes.map((type) => (
                   <option key={type.value} value={type.value}>
@@ -503,14 +468,12 @@ export function MeetingForm({
               >
                 Attendees
               </label>
-
               <div className="flex gap-2">
                 <div className="relative min-w-0 flex-1">
                   <UserPlus
                     size={18}
                     className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
                   />
-
                   <input
                     id="meeting-attendees"
                     type="text"
@@ -518,17 +481,15 @@ export function MeetingForm({
                     onChange={(event) => setAttendeeInput(event.target.value)}
                     onKeyDown={handleAttendeeKeyDown}
                     placeholder="Enter attendee name"
-                    className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition-shadow placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    className="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-100"
                   />
                 </div>
-
                 <button
                   type="button"
                   onClick={addAttendee}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   <Plus size={17} />
-
                   <span className="hidden sm:inline">Add</span>
                 </button>
               </div>
@@ -541,14 +502,12 @@ export function MeetingForm({
                       className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700"
                     >
                       <Users size={13} />
-
                       {attendee}
-
                       <button
                         type="button"
                         onClick={() => removeAttendee(attendee)}
                         aria-label={`Remove ${attendee}`}
-                        className="rounded-full p-0.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-900"
+                        className="rounded-full p-0.5 text-slate-400 hover:bg-white hover:text-slate-900"
                       >
                         <X size={13} />
                       </button>
@@ -564,20 +523,19 @@ export function MeetingForm({
               type="button"
               onClick={onCancel}
               disabled={isSubmitting}
-              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
             >
               Cancel
             </button>
-
             <button
               type="submit"
               disabled={isSubmitting}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-70"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 size={17} className="animate-spin" />
-                  {isEditing ? "Saving..." : "Creating..."}
+                  Saving...
                 </>
               ) : (
                 <>
