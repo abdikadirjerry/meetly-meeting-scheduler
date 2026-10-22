@@ -22,6 +22,9 @@ import {
 } from "@/lib/meeting-utils";
 import { getScheduleValidationError } from "@/lib/meeting-scheduling";
 import { usePersistedMeetings } from "@/hooks/use-persisted-meetings";
+import { TopHeader } from "@/components/top-header";
+import { useNotifications } from "@/hooks/use-notifications";
+import { useMeetingReminders } from "@/hooks/use-meeting-reminders";
 
 const initialMeetings: Meeting[] = [
   {
@@ -61,6 +64,22 @@ export default function Home() {
 
   const { meetings, setMeetings, isLoaded } =
     usePersistedMeetings(initialMeetings);
+
+  const {
+    notifications,
+    unreadCount,
+    addNotification,
+    markAsRead,
+    markAllAsRead,
+    deleteNotification,
+    clearNotifications,
+  } = useNotifications();
+
+  useMeetingReminders({
+    meetings,
+    notifications,
+    addNotification,
+  });
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<Meeting["type"] | "all">("all");
@@ -257,38 +276,16 @@ export default function Home() {
         />
 
         <div className="min-w-0 flex-1">
-          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-            <div className="flex h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-              <div className="flex min-w-0 items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsMobileSidebarOpen(true)}
-                  aria-label="Open navigation"
-                  className="rounded-xl p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
-                >
-                  <span className="text-xl">☰</span>
-                </button>
-
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-slate-500">
-                    Welcome back
-                  </p>
-                  <h1 className="truncate text-lg font-bold text-slate-900 sm:text-xl">
-                    Your meetings
-                  </h1>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={openCreateForm}
-                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                <Plus size={17} />
-                <span className="hidden sm:inline">Schedule Meeting</span>
-              </button>
-            </div>
-          </header>
+          <TopHeader
+            onMenuClick={() => setIsMobileSidebarOpen(true)}
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onMarkAsRead={markAsRead}
+            onMarkAllAsRead={markAllAsRead}
+            onDeleteNotification={deleteNotification}
+            onClearNotifications={clearNotifications}
+            onScheduleMeeting={openCreateForm}
+          />
 
           <main className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
             <section className="mb-8">
