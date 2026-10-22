@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import {
   CalendarDays,
   Clock3,
@@ -29,7 +29,10 @@ interface FormErrors {
   location?: string;
 }
 
-const meetingTypes: { value: MeetingType; label: string }[] = [
+const meetingTypes: {
+  value: MeetingType;
+  label: string;
+}[] = [
   {
     value: "work",
     label: "Work",
@@ -79,28 +82,15 @@ export function MeetingForm({
   const [meetingType, setMeetingType] = useState<MeetingType>(
     meeting?.type ?? "work",
   );
+
   const [attendeeInput, setAttendeeInput] = useState("");
   const [attendees, setAttendees] = useState<string[]>(
     meeting?.attendees ?? [],
   );
+
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-
-  useEffect(() => {
-    if (!meeting) {
-      return;
-    }
-
-    setTitle(meeting.title);
-    setDescription(meeting.description ?? "");
-    setDate(meeting.date);
-    setStartTime(meeting.startTime);
-    setEndTime(meeting.endTime);
-    setLocation(meeting.location ?? "");
-    setMeetingType(meeting.type);
-    setAttendees(meeting.attendees);
-  }, [meeting]);
 
   function addAttendee() {
     const name = attendeeInput.trim();
@@ -538,6 +528,7 @@ export function MeetingForm({
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950"
                 >
                   <Plus size={17} />
+
                   <span className="hidden sm:inline">Add</span>
                 </button>
               </div>

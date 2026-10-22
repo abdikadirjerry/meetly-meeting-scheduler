@@ -82,7 +82,6 @@ export default function Home() {
   }, [meetings]);
 
   // All upcoming meetings, independent from search/filter UI.
-  // This is used for the "Next meeting" section.
   const upcomingMeetings = useMemo(() => {
     return meetings
       .filter(isMeetingUpcoming)
@@ -92,6 +91,9 @@ export default function Home() {
           getMeetingDateTime(b.date, b.startTime).getTime(),
       );
   }, [meetings]);
+
+  // The closest upcoming meeting.
+  const nextMeeting = upcomingMeetings[0] ?? null;
 
   // Part 6: filtered and sorted meetings
   const filteredMeetings = useMemo(() => {

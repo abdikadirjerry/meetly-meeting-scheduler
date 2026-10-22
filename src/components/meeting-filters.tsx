@@ -2,7 +2,7 @@
 
 import { Search, SlidersHorizontal, X } from "lucide-react";
 
-import type { Meeting, MeetingType } from "@/types/meeting";
+import type { MeetingType } from "@/types/meeting";
 
 export type MeetingStatusFilter = "all" | "upcoming" | "completed";
 
@@ -98,7 +98,7 @@ export function MeetingFilters({
               type="search"
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search by title, description, or location..."
+              placeholder="Search by title, description, location..."
               className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition-shadow placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
             />
           </div>
